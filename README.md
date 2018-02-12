@@ -1,1 +1,1 @@
-# tartans
+Repository for Kaggle Competitions
