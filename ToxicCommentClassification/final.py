@@ -7,6 +7,9 @@ from sklearn.model_selection import KFold
 from sklearn.model_selection import cross_val_predict
 from sklearn.naive_bayes import BernoulliNB
 from sklearn import metrics
+from sklearn import svm
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GridSearchCV
 import pickle
 
 import copy
@@ -37,7 +40,11 @@ def train_on_features(train_features, train_labels, model_skeleton):
     model = copy.copy(model_skeleton)
     model.fit(train_features, train_labels)
 
-    print(cross_validate(model, train_features, train_labels))
+    # print model params
+    print("\nBest params for '"+ model.__name__ + "':" + model.best_params_)
+
+    # commenting -> no need now as we are doing parameter sweep
+    #print(cross_validate(model, train_features, train_labels))
     return model
     
 
@@ -90,15 +97,48 @@ def cross_validate(model, feature_set, true_labels):
     return metrics.accuracy_score(true_labels, predicted)
     
 def run(args):
-    model_skeleton = BernoulliNB()
-    print("Training on file")
-    print(args)
-    model_collection, vectorizer = train_on_file(args[0], model_skeleton)
-    print("Testing on file")
-    ids, results = test_on_file(args[1], model_collection, vectorizer)
-    print("Writing to file")
-    write_to_submission_file(args[2],ids,results)
+
+    
+    models = []
+    scores = ['precision', 'recall', 'accuracy']
+
+    nb_params = [{"alpha" : [0.25, 0.5, 0.75, 1]}]
+
+    svm_params = [{'kernel': ['rbf'], 'gamma': [1e-3, 1e-4],
+                     'C': [1, 10, 100, 1000]},
+                    {'kernel': ['linear'], 'C': [1, 10, 100, 1000]}
+                 ]
+
+    lr_params = [
+                    {
+                    "penalty" : ["l1", "l2"],
+                    "C": [0.25, 0.5, 0.75, 1]
+                    }                    
+                ]
+
+    for score in scores:
+        models = [
+                    GridSearchCV(BernoulliNB(), nb_params , cv=5, scoring='%s_macro' % score),
+                    GridSearchCV(svm.SVC(), svm_params, cv=5, scoring='%s_macro' % score),
+                    GridSearchCV(LogisticRegression(dual = True, tol=1e-6, class_weight='balanced'), lr_params, cv=5, scoring='%s_macro' % score),
+                ]   
+    
+
+        for model_skeleton in models:
+            print("Training '" + model_skeleton.estimator.__class__.__name__ + "' on file")
+            
+            # print(args)
+
+            model_collection, vectorizer = train_on_file(args[0], model_skeleton)
+            print("Testing on file")
+            ids, results = test_on_file(args[1], model_collection, vectorizer)
+            print("Writing to file")
+            write_to_submission_file(model_skeleton.estimator.__class__.__name__ + "_" + args[2],ids,results)
     
 
 if __name__ == '__main__':
-    run(sys.argv[1:])
+    if len(sys.argv) >= 4:
+        run(sys.argv[1:])
+    else:
+        print("Must pass atleast 3 params.")
+        print("python final.py <train_file_name> <test_file_name> <output_file_name>")
