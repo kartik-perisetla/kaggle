@@ -16,6 +16,24 @@ import copy
 
 CHAR_REP = 10
 
+# to hold vectorizer and feature collection
+cache = {}
+
+def add_to_cache(key, value):
+    if key in cache:
+       print("cache already contains entry with key: '" + key + "'")
+       raise Exception("Duplicate key in cache: cache already contains entry with key: '" + key + "'")
+    else:
+        cache[key] = value
+
+def get_from_cache(key):
+    if key in cache:
+        return cache[key]
+    else:
+        print("cache doesn't contains entry with key '" + key + "'")
+        raise Exception("Invalid cache access: cache doesn't contain key: '" + key + "'")
+
+
 def change_to_curdir():
     abspath = os.path.abspath(__file__)
     dname = os.path.dirname(abspath)
@@ -40,6 +58,10 @@ def get_binary_dict(text, tolerance=0):
     count_dict = get_count_dict(text)
     return {key:1 if val > tolerance else 0 for key,val in count_dict.items()}
 
+# TODO: implement - get tf dict for input text
+def get_term_freq_dict(text, tolerance=0):
+    pass
+
 def extract_features(list_of_text, vectorizer= DictVectorizer()):
     return vectorizer.fit_transform([get_binary_dict(text) for text in list_of_text]), vectorizer
 
@@ -48,7 +70,9 @@ def extract_test_features(list_of_text, vectorizer):
     
 def train_on_features(class_label, train_features, train_labels, model_skeleton):
     model = copy.copy(model_skeleton)
+    print("about to fit model:'"+model.estimator.__class__.__name__+"' on " + str(len(train_labels)) + " instances")
     model.fit(train_features, train_labels)
+    print("fitting complete on model:'"+model.estimator.__class__.__name__+"' on " + str(len(train_labels)) + " instances")
 
     print("\n")
     print("*"*CHAR_REP + model.estimator.__class__.__name__ + "*"*CHAR_REP )
@@ -56,11 +80,21 @@ def train_on_features(class_label, train_features, train_labels, model_skeleton)
     print("\nBest params for '"+ model.estimator.__class__.__name__ + "' for class '" + class_label + "' => " + str(model.best_params_))
 
     # commenting -> no need now as we are doing parameter sweep
-    print("Cross-Validation Accuracy for '"+ model.estimator.__class__.__name__ + "' for class '" + class_label + "' => ")
-    print(cross_validate(model, train_features, train_labels))
+    # print("Cross-Validation Accuracy for '"+ model.estimator.__class__.__name__ + "' for class '" + class_label + "' => ")
+    # print(cross_validate(model, train_features, train_labels))
+
     print("*"*20 + "\n")
     return model
-    
+
+# pass 'TRAIN' as key when want features for training instances
+# pass 'TEST' as key when want features for test instances
+# pass None as key when adctually want to invoke feature extraction method
+def get_features(text_list, key=None):  
+    if key is None:
+        return extract_features(text_list)
+    else:
+        train_features, vectorizer = get_from_cache(key)
+        return (train_features, vectorizer)
 
 def train_on_file(train_file_name, model_skeleton):
     train_data = read_file(train_file_name)
@@ -68,7 +102,10 @@ def train_on_file(train_file_name, model_skeleton):
     labels = [dat[2:] for dat in train_data]
     # print(labels[:5])
     
+    
+    print("about to extract features")
     train_features, vectorizer = extract_features(text_list)
+    print("extracted features")
     #pickle.dump(train_features, open("features.pkl","w"))
 
     model_collection = []
@@ -126,16 +163,19 @@ def run(args):
                     {
                     "penalty" : ["l1", "l2"],
                     "C": [0.25, 0.5, 0.75, 1]
-                    }                    
+                    }             
                 ]
+
+    #TODO : use term-frequency dict vectorizer and try all these algorithms
 
     for score in scores:
         models = [
                     GridSearchCV(estimator=BernoulliNB(), param_grid=nb_params , cv=5, scoring='%s_macro' % score, verbose=True),
                     GridSearchCV(estimator=svm.SVC(), param_grid=svm_params, cv=5, scoring='%s_macro' % score, verbose=True),
                     GridSearchCV(estimator=LogisticRegression(dual = True, tol=1e-6, class_weight='balanced'), param_grid=lr_params, cv=5, scoring='%s_macro' % score, verbose=True)
-                ]   
+                ]
     
+
 
         for model_skeleton in models:
             print("Training '" + model_skeleton.estimator.__class__.__name__ + "' on file")
