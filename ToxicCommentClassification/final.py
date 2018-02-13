@@ -1,3 +1,4 @@
+import os
 import csv
 import sys
 import nltk
@@ -11,13 +12,22 @@ from sklearn import svm
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GridSearchCV
 import pickle
-
 import copy
+
+CHAR_REP = 10
+
+def change_to_curdir():
+    abspath = os.path.abspath(__file__)
+    dname = os.path.dirname(abspath)
+    # print("cur dir name:"+dname)
+    os.chdir(dname)
 
 def read_file(filepath, encoding='utf-8'):
     data = []
     with open(filepath,'rt',encoding=encoding) as f_input:
         data = list(csv.reader(f_input))[1:]
+    f_input.close()
+    print("read file '" + filepath + "' completely")
     return data
 
 
@@ -36,15 +46,19 @@ def extract_features(list_of_text, vectorizer= DictVectorizer()):
 def extract_test_features(list_of_text, vectorizer):
     return vectorizer.transform([get_binary_dict(text) for text in list_of_text])
     
-def train_on_features(train_features, train_labels, model_skeleton):
+def train_on_features(class_label, train_features, train_labels, model_skeleton):
     model = copy.copy(model_skeleton)
     model.fit(train_features, train_labels)
 
+    print("\n")
+    print("*"*CHAR_REP + model.estimator.__class__.__name__ + "*"*CHAR_REP )
     # print model params
-    print("\nBest params for '"+ model.__name__ + "':" + model.best_params_)
+    print("\nBest params for '"+ model.estimator.__class__.__name__ + "' for class '" + class_label + "' => " + str(model.best_params_))
 
     # commenting -> no need now as we are doing parameter sweep
-    #print(cross_validate(model, train_features, train_labels))
+    print("Cross-Validation Accuracy for '"+ model.estimator.__class__.__name__ + "' for class '" + class_label + "' => ")
+    print(cross_validate(model, train_features, train_labels))
+    print("*"*20 + "\n")
     return model
     
 
@@ -52,16 +66,15 @@ def train_on_file(train_file_name, model_skeleton):
     train_data = read_file(train_file_name)
     text_list = [dat[1] for dat in train_data]
     labels = [dat[2:] for dat in train_data]
-    print(labels[:5])
+    # print(labels[:5])
     
     train_features, vectorizer = extract_features(text_list)
     #pickle.dump(train_features, open("features.pkl","w"))
 
     model_collection = []
     types = ['toxic','severe_toxic','obscene','threat','insult','identity_hate']
-    for idx in range(len(labels[0])):
-        print("Cross-Validation Accuracy for " + types[idx] + " : ")
-        model_collection.append(train_on_features(train_features, [x[idx] for x in labels], model_skeleton))
+    for idx in range(len(labels[0])):        
+        model_collection.append(train_on_features(types[idx], train_features, [x[idx] for x in labels], model_skeleton))
     return model_collection, vectorizer
 
 def predict(test_features, model):
@@ -118,9 +131,9 @@ def run(args):
 
     for score in scores:
         models = [
-                    GridSearchCV(BernoulliNB(), nb_params , cv=5, scoring='%s_macro' % score),
-                    GridSearchCV(svm.SVC(), svm_params, cv=5, scoring='%s_macro' % score),
-                    GridSearchCV(LogisticRegression(dual = True, tol=1e-6, class_weight='balanced'), lr_params, cv=5, scoring='%s_macro' % score),
+                    GridSearchCV(estimator=BernoulliNB(), param_grid=nb_params , cv=5, scoring='%s_macro' % score, verbose=True),
+                    GridSearchCV(estimator=svm.SVC(), param_grid=svm_params, cv=5, scoring='%s_macro' % score, verbose=True),
+                    GridSearchCV(estimator=LogisticRegression(dual = True, tol=1e-6, class_weight='balanced'), param_grid=lr_params, cv=5, scoring='%s_macro' % score, verbose=True)
                 ]   
     
 
@@ -137,7 +150,9 @@ def run(args):
     
 
 if __name__ == '__main__':
+    change_to_curdir()
     if len(sys.argv) >= 4:
+        print("launched with args:" + str(sys.argv))
         run(sys.argv[1:])
     else:
         print("Must pass atleast 3 params.")
