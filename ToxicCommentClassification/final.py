@@ -15,6 +15,8 @@ import pickle
 import copy
 
 CHAR_REP = 10
+TRAIN_KEY = 'TRAIN'
+TEST_KEY = 'TEST'
 
 # to hold vectorizer and feature collection
 cache = {}
@@ -25,13 +27,14 @@ def add_to_cache(key, value):
        raise Exception("Duplicate key in cache: cache already contains entry with key: '" + key + "'")
     else:
         cache[key] = value
+        print("Added key-value pair with key:'" + key +"'")
 
 def get_from_cache(key):
     if key in cache:
         return cache[key]
     else:
         print("cache doesn't contains entry with key '" + key + "'")
-        raise Exception("Invalid cache access: cache doesn't contain key: '" + key + "'")
+        return None
 
 
 def change_to_curdir():
@@ -80,32 +83,42 @@ def train_on_features(class_label, train_features, train_labels, model_skeleton)
     print("\nBest params for '"+ model.estimator.__class__.__name__ + "' for class '" + class_label + "' => " + str(model.best_params_))
 
     # commenting -> no need now as we are doing parameter sweep
-    # print("Cross-Validation Accuracy for '"+ model.estimator.__class__.__name__ + "' for class '" + class_label + "' => ")
-    # print(cross_validate(model, train_features, train_labels))
+    print("Cross-Validation Accuracy for '"+ model.estimator.__class__.__name__ + "' for class '" + class_label + "' => ")
+    print(cross_validate(model, train_features, train_labels))
 
     print("*"*20 + "\n")
     return model
 
-# pass 'TRAIN' as key when want features for training instances
-# pass 'TEST' as key when want features for test instances
+# pass 'TRAIN_KEY' as key when want features for training instances
+# pass 'TEST_KEY' as key when want features for test instances
 # pass None as key when adctually want to invoke feature extraction method
 def get_features(text_list, key=None):  
     if key is None:
         return extract_features(text_list)
     else:
-        train_features, vectorizer = get_from_cache(key)
+        item = get_from_cache(key)
+        if not item is None:
+            train_features, vectorizer = get_from_cache(key)
+        else:
+            train_features, vectorizer = extract_features(text_list)
+            # add this to cache
+            add_to_cache(key, (train_features, vectorizer))
         return (train_features, vectorizer)
 
 def train_on_file(train_file_name, model_skeleton):
     train_data = read_file(train_file_name)
     text_list = [dat[1] for dat in train_data]
     labels = [dat[2:] for dat in train_data]
-    # print(labels[:5])
     
     
     print("about to extract features")
-    train_features, vectorizer = extract_features(text_list)
+    # train_features, vectorizer = extract_features(text_list)
+
+    train_features, vectorizer = get_features(text_list, TRAIN_KEY)
+
     print("extracted features")
+
+    # dumping features to file
     #pickle.dump(train_features, open("features.pkl","w"))
 
     model_collection = []
@@ -121,7 +134,6 @@ def predict(test_features, model):
     one_index = 1
     probabilities = [item[one_index] for item in result]
     return probabilities
-
 
 def test_on_file(test_file_name, model_collection, vectorizer):
     test_data = read_file(test_file_name)
@@ -154,8 +166,12 @@ def run(args):
 
     nb_params = [{"alpha" : [0.25, 0.5, 0.75, 1]}]
 
-    svm_params = [{'kernel': ['rbf'], 'gamma': [1e-3, 1e-4],
-                     'C': [1, 10, 100, 1000]},
+    # svm_params = [{'kernel': ['rbf'], 'gamma': [1e-3, 1e-4],
+    #                  'C': [1, 10, 100, 1000]},
+    #                 {'kernel': ['linear'], 'C': [1, 10, 100, 1000]}
+    #              ]
+
+    svm_params = [
                     {'kernel': ['linear'], 'C': [1, 10, 100, 1000]}
                  ]
 
@@ -174,8 +190,6 @@ def run(args):
                     GridSearchCV(estimator=svm.SVC(), param_grid=svm_params, cv=5, scoring='%s_macro' % score, verbose=True),
                     GridSearchCV(estimator=LogisticRegression(dual = True, tol=1e-6, class_weight='balanced'), param_grid=lr_params, cv=5, scoring='%s_macro' % score, verbose=True)
                 ]
-    
-
 
         for model_skeleton in models:
             print("Training '" + model_skeleton.estimator.__class__.__name__ + "' on file")
