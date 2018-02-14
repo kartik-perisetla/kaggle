@@ -17,9 +17,13 @@ import copy
 CHAR_REP = 10
 TRAIN_KEY = 'TRAIN'
 TEST_KEY = 'TEST'
+BINARY_VECTORIZER_KEY = 'BINARY_VECTORIZER'
+COUNT_VECTORIZER_KEY = 'COUNT_VECTORIZER'
+CLASS_LABELS_KEY = 'CLASS_LABELS'
 
 # to hold vectorizer and feature collection
 cache = {}
+best_model_dict = {}
 
 def add_to_cache(key, value):
     if key in cache:
@@ -84,7 +88,14 @@ def train_on_features(class_label, train_features, train_labels, model_skeleton)
 
     # commenting -> no need now as we are doing parameter sweep
     print("Cross-Validation Accuracy for '"+ model.estimator.__class__.__name__ + "' for class '" + class_label + "' => ")
-    print(cross_validate(model, train_features, train_labels))
+
+    cross_validation_score = cross_validate(model, train_features, train_labels)
+    print(cross_validation_score)
+
+    # Save the best model for the class label based on CV accuracy
+    best_model_accuracy = best_model_dict.get(class_label, (0, None, None))
+    if best_model_accuracy[0] < cross_validation_score:
+        best_model_dict[class_label] = (cross_validation_score, model, )
 
     print("*"*20 + "\n")
     return model
@@ -94,14 +105,16 @@ def train_on_features(class_label, train_features, train_labels, model_skeleton)
 # pass None as key when adctually want to invoke feature extraction method
 def get_features(text_list, key=None):  
     if key is None:
-        return extract_features(text_list)
+        train_features, vectorizer = extract_features(text_list)
+        add_to_cache(BINARY_VECTORIZER_KEY, vectorizer)
+        return (train_features, vectorizer)
     else:
         item = get_from_cache(key)
-        if not item is None:
+        if item is not None:
             train_features, vectorizer = get_from_cache(key)
         else:
             train_features, vectorizer = extract_features(text_list)
-            # add this to cache
+            add_to_cache(BINARY_VECTORIZER_KEY, vectorizer)
             add_to_cache(key, (train_features, vectorizer))
         return (train_features, vectorizer)
 
@@ -122,7 +135,7 @@ def train_on_file(train_file_name, model_skeleton):
     #pickle.dump(train_features, open("features.pkl","w"))
 
     model_collection = []
-    types = ['toxic','severe_toxic','obscene','threat','insult','identity_hate']
+    types = get_from_cache(CLASS_LABELS_KEY)
     for idx in range(len(labels[0])):        
         model_collection.append(train_on_features(types[idx], train_features, [x[idx] for x in labels], model_skeleton))
     return model_collection, vectorizer
@@ -147,7 +160,7 @@ def test_on_file(test_file_name, model_collection, vectorizer):
     return ids, list(zip(*test_probabilities))
     
 def write_to_submission_file(filepath, ids, results):
-    writo = [['id','toxic','severe_toxic','obscene','threat','insult','identity_hate']]
+    writo = [get_from_cache(CLASS_LABELS_KEY)]
     with open(filepath, "wt", encoding="utf-8", newline='') as fop:
         writer = csv.writer(fop)       
         for idx, item in zip(ids, results):
@@ -160,7 +173,9 @@ def cross_validate(model, feature_set, true_labels):
     
 def run(args):
 
-    
+    class_labels = ['toxic','severe_toxic','obscene','threat','insult','identity_hate']
+    add_to_cache(CLASS_LABELS_KEY, class_labels)
+
     models = []
     scores = ['precision', 'recall', 'accuracy']
 
@@ -197,10 +212,15 @@ def run(args):
             # print(args)
 
             model_collection, vectorizer = train_on_file(args[0], model_skeleton)
-            print("Testing on file")
-            ids, results = test_on_file(args[1], model_collection, vectorizer)
-            print("Writing to file")
-            write_to_submission_file(model_skeleton.estimator.__class__.__name__ + "_" + args[2],ids,results)
+
+        print("Testing on file")
+        best_model_collection = []
+        for class_label in get_from_cache(CLASS_LABELS_KEY):
+            best_model_collection.append(best_model_dict[class_label][1])
+
+        ids, results = test_on_file(args[1], best_model_collection, get_from_cache(BINARY_VECTORIZER_KEY))
+        print("Writing to file")
+        write_to_submission_file(args[2],ids,results)
     
 
 if __name__ == '__main__':
