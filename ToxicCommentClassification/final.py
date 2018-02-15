@@ -6,6 +6,7 @@ from collections import Counter
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.model_selection import KFold
 from sklearn.model_selection import cross_val_predict
+from sklearn.linear_model import LinearRegression
 from sklearn.naive_bayes import BernoulliNB
 from sklearn import metrics
 from sklearn import svm
@@ -179,16 +180,20 @@ def run(args):
     models = []
     scores = ['precision', 'recall', 'accuracy']
 
-    nb_params = [{"alpha" : [0.25, 0.5, 0.75, 1]}]
-
-    # svm_params = [{'kernel': ['rbf'], 'gamma': [1e-3, 1e-4],
-    #                  'C': [1, 10, 100, 1000]},
-    #                 {'kernel': ['linear'], 'C': [1, 10, 100, 1000]}
-    #              ]
+    nb_params = [{"alpha" : [0.25, 0.5, 0.75, 1]}]    
 
     svm_params = [
-                    {'kernel': ['linear'], 'C': [1, 10, 100, 1000]}
+                    {
+                     "C" : [0.1, 0.25, 0.5, 0.75, 1]
+                    }
                  ]
+
+    linear_params = [
+                        {
+                            "fit_intercept" : [True, False]
+                        }
+
+                    ]
 
     lr_params = [
                     {
@@ -201,16 +206,17 @@ def run(args):
 
     for score in scores:
         models = [
+                    # GridSearchCV(estimator=LinearRegression(), param_grid=linear_params, cv=5, scoring='%s_macro' % score, verbose=True),
+
+                    GridSearchCV(estimator=svm.LinearSVC(), param_grid=svm_params, cv=5, scoring='%s_macro' % score, verbose=True),
+                    
                     GridSearchCV(estimator=BernoulliNB(), param_grid=nb_params , cv=5, scoring='%s_macro' % score, verbose=True),
-                    GridSearchCV(estimator=svm.SVC(), param_grid=svm_params, cv=5, scoring='%s_macro' % score, verbose=True),
+
                     GridSearchCV(estimator=LogisticRegression(dual = True, tol=1e-6, class_weight='balanced'), param_grid=lr_params, cv=5, scoring='%s_macro' % score, verbose=True)
                 ]
 
         for model_skeleton in models:
             print("Training '" + model_skeleton.estimator.__class__.__name__ + "' on file")
-            
-            # print(args)
-
             model_collection, vectorizer = train_on_file(args[0], model_skeleton)
 
         print("Testing on file")
