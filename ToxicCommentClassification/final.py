@@ -119,6 +119,7 @@ def get_features(text_list, key=None):
             add_to_cache(key, (train_features, vectorizer))
         return (train_features, vectorizer)
 
+# method that trains a collection of model
 def train_on_file(train_file_name, model_skeleton):
     train_data = read_file(train_file_name)
     text_list = [dat[1] for dat in train_data]
@@ -136,9 +137,12 @@ def train_on_file(train_file_name, model_skeleton):
     #pickle.dump(train_features, open("features.pkl","w"))
 
     model_collection = []
-    types = get_from_cache(CLASS_LABELS_KEY)
-    for idx in range(len(labels[0])):        
-        model_collection.append(train_on_features(types[idx], train_features, [x[idx] for x in labels], model_skeleton))
+    class_labels = get_from_cache(CLASS_LABELS_KEY)
+
+    # training 
+    for idx in range(len(labels[0])):
+        # given the model_skeleton, find the best params given input features for train instances
+        model_collection.append(train_on_features(class_labels[idx], train_features, [x[idx] for x in labels], model_skeleton))
     return model_collection, vectorizer
 
 def predict(test_features, model):
@@ -208,16 +212,17 @@ def run(args):
         models = [
                     # GridSearchCV(estimator=LinearRegression(), param_grid=linear_params, cv=5, scoring='%s_macro' % score, verbose=True),
 
+                    GridSearchCV(estimator=LogisticRegression(dual = False, class_weight='balanced'), param_grid=lr_params, cv=5, scoring='%s_macro' % score, verbose=True),
+
                     GridSearchCV(estimator=svm.LinearSVC(), param_grid=svm_params, cv=5, scoring='%s_macro' % score, verbose=True),
                     
-                    GridSearchCV(estimator=BernoulliNB(), param_grid=nb_params , cv=5, scoring='%s_macro' % score, verbose=True),
-
-                    GridSearchCV(estimator=LogisticRegression(dual = True, tol=1e-6, class_weight='balanced'), param_grid=lr_params, cv=5, scoring='%s_macro' % score, verbose=True)
+                    GridSearchCV(estimator=BernoulliNB(), param_grid=nb_params , cv=5, scoring='%s_macro' % score, verbose=True)
                 ]
 
         for model_skeleton in models:
             print("Training '" + model_skeleton.estimator.__class__.__name__ + "' on file")
             model_collection, vectorizer = train_on_file(args[0], model_skeleton)
+
 
         print("Testing on file")
         best_model_collection = []
