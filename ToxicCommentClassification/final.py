@@ -2,6 +2,8 @@ import os
 import csv
 import sys
 import nltk
+import pickle
+import copy
 from collections import Counter
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.model_selection import KFold
@@ -12,8 +14,6 @@ from sklearn import metrics
 from sklearn import svm
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GridSearchCV
-import pickle
-import copy
 
 CHAR_REP = 10
 TRAIN_KEY = 'TRAIN'
@@ -101,20 +101,33 @@ def train_on_features(class_label, train_features, train_labels, model_skeleton)
     print("*"*20 + "\n")
     return model
 
-# pass 'TRAIN_KEY' as key when want features for training instances
-# pass 'TEST_KEY' as key when want features for test instances
-# pass None as key when adctually want to invoke feature extraction method
-def get_features(text_list, key=None):  
+
+def get_features(text_list, key=None):
+    """Method to get features for input list of text
+    
+    Arguments:
+        text_list {string} -- list of strings for which we need to extract features
+    
+    Keyword Arguments:
+        key {string} -- string to identify instances corresponding to a logical group. i.e. TRAIN or TEST set (default: {None})
+        - pass 'TRAIN_KEY' as key when want features for training instances
+        - pass 'TEST_KEY' as key when want features for test instances
+        - pass None as key when actually want to invoke feature extraction method
+    """    
     if key is None:
         train_features, vectorizer = extract_features(text_list)
         add_to_cache(BINARY_VECTORIZER_KEY, vectorizer)
         return (train_features, vectorizer)
     else:
         item = get_from_cache(key)
+        # if item is a tuple of train_features and vectorizer
         if item is not None:
-            train_features, vectorizer = get_from_cache(key)
+            train_features, vectorizer = item
         else:
+            # extract features using input text_list
             train_features, vectorizer = extract_features(text_list)
+
+            # cache the vectorizer and train features for dataset identified with a key
             add_to_cache(BINARY_VECTORIZER_KEY, vectorizer)
             add_to_cache(key, (train_features, vectorizer))
         return (train_features, vectorizer)
@@ -175,7 +188,21 @@ def write_to_submission_file(filepath, ids, results):
 def cross_validate(model, feature_set, true_labels):
     predicted = cross_val_predict(model, feature_set, true_labels, cv=10)
     return metrics.accuracy_score(true_labels, predicted)
-    
+
+
+def pickle_object(instance, pickle_name="pickled_object.bin"):
+    if instance is not None:
+        pickle.dump(instance, open(pickle_name, "wb"))
+        print("pickle_object:instance pickled as '" + pickle_name + "' successfully.")
+    else:
+        print("pickle_object:make sure instance is not None.")
+
+def save_model_collection(model_collection, pickle_name="model_collection.bin"):
+    pickle_object(model_collection, pickle_name)
+
+def save_vectorizer(vectorizer, pickle_name="vectorizer.bin"):
+    pickle_object(vectorizer, pickle_name)
+
 def run(args):
 
     class_labels = ['toxic','severe_toxic','obscene','threat','insult','identity_hate']
@@ -228,6 +255,15 @@ def run(args):
         best_model_collection = []
         for class_label in get_from_cache(CLASS_LABELS_KEY):
             best_model_collection.append(best_model_dict[class_label][1])
+
+
+        # save the best_model_collection
+        save_model_collection(model_collection=best_model_collection, pickle_name="best_model_collection.bin")
+
+        #save the vectorizer
+        binary_vectorizer = get_from_cache(BINARY_VECTORIZER_KEY)
+        save_vectorizer(vectorizer=binary_vectorizer, pickle_name="binary_vectorizer.bin")
+        
 
         ids, results = test_on_file(args[1], best_model_collection, get_from_cache(BINARY_VECTORIZER_KEY))
         print("Writing to file")
