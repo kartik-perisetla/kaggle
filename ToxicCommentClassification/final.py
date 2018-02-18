@@ -169,7 +169,7 @@ def predict(test_features, model):
         one_index = 1
         probabilities = [item[one_index] for item in result]
     else:
-        result = model.predict(test_features)
+        probabilities = model.predict(test_features)
     return probabilities
 
 def test_on_file(test_file_name, model_collection, vectorizer):
