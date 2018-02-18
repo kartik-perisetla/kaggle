@@ -4,6 +4,7 @@ import sys
 import nltk
 import pickle
 import copy
+from ast import literal_eval
 from collections import Counter
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.model_selection import KFold
@@ -21,6 +22,8 @@ TEST_KEY = 'TEST'
 BINARY_VECTORIZER_KEY = 'BINARY_VECTORIZER'
 COUNT_VECTORIZER_KEY = 'COUNT_VECTORIZER'
 CLASS_LABELS_KEY = 'CLASS_LABELS'
+BEST_MODEL_COLLECTION_KEY = "best_model_collection.bin"
+VECTORIZER_KEY = "binary_vectorizer.bin"
 
 # to hold vectorizer and feature collection
 cache = {}
@@ -159,11 +162,14 @@ def train_on_file(train_file_name, model_skeleton):
     return model_collection, vectorizer
 
 def predict(test_features, model):
-    result = model.predict_proba(test_features)
-    print(model.classes_)
-    #one_index = model.classes_.index("1")
-    one_index = 1
-    probabilities = [item[one_index] for item in result]
+    if hasattr(model, "predict_proba"):
+        result = model.predict_proba(test_features)
+        print(model.classes_)
+        #one_index = model.classes_.index("1")
+        one_index = 1
+        probabilities = [item[one_index] for item in result]
+    else:
+        result = model.predict(test_features)
     return probabilities
 
 def test_on_file(test_file_name, model_collection, vectorizer):
@@ -197,12 +203,27 @@ def pickle_object(instance, pickle_name="pickled_object.bin"):
     else:
         print("pickle_object:make sure instance is not None.")
 
+def unpickle_object(pickle_name="pickled_object.bin"):
+    if not os.path.exists(pickle_name):
+        print("unpickled_object:pickle file '" + pickle_name +"' not found :(")
+        return
+    instance = pickle.load(open(pickle_name, "rb"))
+    return instance
+
 def save_model_collection(model_collection, pickle_name="model_collection.bin"):
     pickle_object(model_collection, pickle_name)
+
+def load_model_collection(pickle_name="model_collection.bin"):
+    return unpickle_object(pickle_name=pickle_name)
 
 def save_vectorizer(vectorizer, pickle_name="vectorizer.bin"):
     pickle_object(vectorizer, pickle_name)
 
+def load_vectorizer(pickle_name="vectorizer.bin"):
+    return unpickle_object(pickle_name=pickle_name)
+
+
+# args : <train_file_name> <test_file_name> <output_file_name> <skip_train:True/False>
 def run(args):
 
     class_labels = ['toxic','severe_toxic','obscene','threat','insult','identity_hate']
@@ -211,63 +232,69 @@ def run(args):
     models = []
     scores = ['precision', 'recall', 'accuracy']
 
-    nb_params = [{"alpha" : [0.25, 0.5, 0.75, 1]}]    
+    skip_train_flag = literal_eval(args[3])
 
-    svm_params = [
-                    {
-                     "C" : [0.1, 0.25, 0.5, 0.75, 1]
-                    }
-                 ]
+    if not skip_train_flag:
+        nb_params = [{"alpha" : [0.25, 0.5, 0.75, 1]}]    
 
-    linear_params = [
+        svm_params = [
                         {
-                            "fit_intercept" : [True, False]
+                        "C" : [0.1, 0.25, 0.5, 0.75, 1]
                         }
-
                     ]
 
-    lr_params = [
-                    {
-                    "penalty" : ["l1", "l2"],
-                    "C": [0.25, 0.5, 0.75, 1]
-                    }             
-                ]
+        linear_params = [
+                            {
+                                "fit_intercept" : [True, False]
+                            }
 
-    #TODO : use term-frequency dict vectorizer and try all these algorithms
+                        ]
 
-    for score in scores:
-        models = [
-                    # GridSearchCV(estimator=LinearRegression(), param_grid=linear_params, cv=5, scoring='%s_macro' % score, verbose=True),
+        lr_params = [
+                        {
+                        "penalty" : ["l1", "l2"],
+                        "C": [0.25, 0.5, 0.75, 1]
+                        }             
+                    ]
 
-                    GridSearchCV(estimator=LogisticRegression(dual = False, class_weight='balanced'), param_grid=lr_params, cv=5, scoring='%s_macro' % score, verbose=True),
+        #TODO : use term-frequency dict vectorizer and try all these algorithms
 
-                    GridSearchCV(estimator=svm.LinearSVC(), param_grid=svm_params, cv=5, scoring='%s_macro' % score, verbose=True),
-                    
-                    GridSearchCV(estimator=BernoulliNB(), param_grid=nb_params , cv=5, scoring='%s_macro' % score, verbose=True)
-                ]
+        for score in scores:
+            models = [
+                        # GridSearchCV(estimator=LinearRegression(), param_grid=linear_params, cv=5, scoring='%s_macro' % score, verbose=True),
 
-        for model_skeleton in models:
-            print("Training '" + model_skeleton.estimator.__class__.__name__ + "' on file")
-            model_collection, vectorizer = train_on_file(args[0], model_skeleton)
+                        GridSearchCV(estimator=LogisticRegression(dual = False, class_weight='balanced'), param_grid=lr_params, cv=5, scoring='%s_macro' % score, verbose=True),
 
+                        GridSearchCV(estimator=svm.LinearSVC(), param_grid=svm_params, cv=5, scoring='%s_macro' % score, verbose=True),
+                        
+                        GridSearchCV(estimator=BernoulliNB(), param_grid=nb_params , cv=5, scoring='%s_macro' % score, verbose=True)
+                    ]
 
-        print("Testing on file")
+            for model_skeleton in models:
+                print("Training '" + model_skeleton.estimator.__class__.__name__ + "' on file")
+                model_collection, vectorizer = train_on_file(args[0], model_skeleton)
+        
         best_model_collection = []
+        # pick the best models for each class - these were captured in best_model_dict in train_on_features method
         for class_label in get_from_cache(CLASS_LABELS_KEY):
             best_model_collection.append(best_model_dict[class_label][1])
 
-
         # save the best_model_collection
-        save_model_collection(model_collection=best_model_collection, pickle_name="best_model_collection.bin")
+        save_model_collection(model_collection=best_model_collection, pickle_name=BEST_MODEL_COLLECTION_KEY)
 
         #save the vectorizer
         binary_vectorizer = get_from_cache(BINARY_VECTORIZER_KEY)
-        save_vectorizer(vectorizer=binary_vectorizer, pickle_name="binary_vectorizer.bin")
-        
+        save_vectorizer(vectorizer=binary_vectorizer, pickle_name=VECTORIZER_KEY)        
+    else:
+        # load the pickled trained best model collection
+        best_model_collection = load_model_collection(pickle_name=BEST_MODEL_COLLECTION_KEY)
+        binary_vectorizer = load_vectorizer(pickle_name=VECTORIZER_KEY)
+        print("loaded pre-trained best_collection_model successfully.")
 
-        ids, results = test_on_file(args[1], best_model_collection, get_from_cache(BINARY_VECTORIZER_KEY))
-        print("Writing to file")
-        write_to_submission_file(args[2],ids,results)
+    print("*"*10 + "Testing on file" + "*"*10)
+    ids, results = test_on_file(args[1], best_model_collection, binary_vectorizer)
+    print("Writing to file")
+    write_to_submission_file(args[2],ids,results)
     
 
 if __name__ == '__main__':
