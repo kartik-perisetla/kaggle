@@ -1,0 +1,6 @@
+# Quora Question pair challenge
+Goal is to find whether two questions have same meaning
+- classification task
+
+Dataset schema:
+"id","qid1","qid2","question1","question2","is_duplicate"
